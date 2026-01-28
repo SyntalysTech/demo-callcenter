@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, useCallback, use } from 'react';
 import { getLead, getNotes } from '@/lib/localStorage';
 import { STATUS_CONFIG, type LeadStatus, type Lead, type LeadNote } from '@/lib/types';
 import Link from 'next/link';
@@ -21,7 +21,7 @@ export default function LeadDetailPage({ params }: Props) {
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     const leadData = getLead(id);
     setLead(leadData);
     if (leadData) {
@@ -29,11 +29,11 @@ export default function LeadDetailPage({ params }: Props) {
       setNotes(notesData.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
     }
     setLoading(false);
-  };
+  }, [id]);
 
   useEffect(() => {
     loadData();
-  }, [id]);
+  }, [loadData]);
 
   if (loading) {
     return (

@@ -67,7 +67,7 @@ export default function LoginPage() {
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
             <p className="text-sm text-yellow-700">
               <strong>Modo Demo:</strong> No se requiere autenticacion real.
-              Haz clic en "Entrar" para acceder al dashboard.
+              Haz clic en el boton para acceder al dashboard.
             </p>
           </div>
 
