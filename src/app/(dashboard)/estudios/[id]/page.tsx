@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getStudy, getLead } from '@/lib/localStorage';
 import { EnergyStudy, Lead, ENERGY_PROVIDERS, EnergyProvider } from '@/lib/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -9,7 +9,6 @@ import {
   ArrowLeft,
   FileText,
   Download,
-  Zap,
   TrendingDown,
   Check,
   Building2,
@@ -17,7 +16,6 @@ import {
   User,
   Sparkles,
   AlertCircle,
-  Euro,
   Bolt
 } from 'lucide-react';
 import Link from 'next/link';
@@ -46,35 +44,20 @@ export default function EstudioDetailPage({ params }: Props) {
   const [pdfReady, setPdfReady] = useState(false);
 
   useEffect(() => {
-    loadData();
-    // Delay PDF rendering to avoid hydration issues
-    const timer = setTimeout(() => setPdfReady(true), 1000);
-    return () => clearTimeout(timer);
-  }, [id]);
-
-  const loadData = async () => {
-    setLoading(true);
-
-    const { data: studyData } = await supabase
-      .from('energy_studies')
-      .select('*')
-      .eq('id', id)
-      .single() as { data: EnergyStudy | null };
+    const studyData = getStudy(id);
+    setStudy(studyData);
 
     if (studyData) {
-      setStudy(studyData);
-
-      const { data: leadData } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('id', studyData.lead_id)
-        .single() as { data: Lead | null };
-
+      const leadData = getLead(studyData.lead_id);
       setLead(leadData);
     }
 
     setLoading(false);
-  };
+
+    // Delay PDF rendering to avoid hydration issues
+    const timer = setTimeout(() => setPdfReady(true), 1000);
+    return () => clearTimeout(timer);
+  }, [id]);
 
   if (loading) {
     return (

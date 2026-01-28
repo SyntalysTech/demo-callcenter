@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { Download, Upload, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { supabase } from '@/lib/supabase';
+import { getLeads, createLead, deleteLead } from '@/lib/localStorage';
 import type { Lead, LeadStatus } from '@/lib/types';
 
 interface Props {
   leads: Lead[];
+  onUpdate?: () => void;
 }
 
 const STATUS_MAP: Record<string, LeadStatus> = {
@@ -49,8 +49,7 @@ const STATUS_LABELS: Record<LeadStatus, string> = {
   green: 'Cerrado / firmado',
 };
 
-export function ExcelButtons({ leads }: Props) {
-  const router = useRouter();
+export function ExcelButtons({ leads, onUpdate }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -197,38 +196,17 @@ export function ExcelButtons({ leads }: Props) {
         return;
       }
 
-      // Insert in batches of 50 for progress tracking
-      const batchSize = 50;
-      const totalBatches = Math.ceil(leadsToInsert.length / batchSize);
-      let insertedCount = 0;
-      let errorOccurred = false;
-
+      // Insert leads one by one for localStorage
       setProgress({ current: 0, total: leadsToInsert.length, show: true });
 
-      for (let i = 0; i < totalBatches; i++) {
-        const batch = leadsToInsert.slice(i * batchSize, (i + 1) * batchSize);
-        const { error } = await supabase.from('leads').insert(batch as never[]);
-
-        if (error) {
-          console.error('Error inserting batch:', error);
-          alert(`Error al importar lote ${i + 1}: ${error.message}`);
-          errorOccurred = true;
-          break;
-        }
-
-        insertedCount += batch.length;
-        setProgress({ current: insertedCount, total: leadsToInsert.length, show: true });
+      for (let i = 0; i < leadsToInsert.length; i++) {
+        createLead(leadsToInsert[i]);
+        setProgress({ current: i + 1, total: leadsToInsert.length, show: true });
       }
 
       setProgress({ current: 0, total: 0, show: false });
-
-      if (!errorOccurred) {
-        alert(`Se importaron ${insertedCount} leads correctamente`);
-        router.refresh();
-      } else if (insertedCount > 0) {
-        alert(`Se importaron ${insertedCount} de ${leadsToInsert.length} leads antes del error`);
-        router.refresh();
-      }
+      alert(`Se importaron ${leadsToInsert.length} leads correctamente`);
+      onUpdate?.();
     } catch (error) {
       console.error('Error importing:', error);
       alert('Error al leer el archivo Excel');
@@ -239,21 +217,18 @@ export function ExcelButtons({ leads }: Props) {
     }
   };
 
-  const handleDeleteAll = async () => {
+  const handleDeleteAll = () => {
     setDeleting(true);
     setShowDeleteConfirm(false);
 
     try {
-      // Delete all leads
-      const { error } = await supabase.from('leads').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (error) {
-        console.error('Error deleting:', error);
-        alert('Error al borrar leads: ' + error.message);
-      } else {
-        alert('Se han borrado todos los leads');
-        router.refresh();
+      // Delete all leads from localStorage
+      const currentLeads = getLeads();
+      for (const lead of currentLeads) {
+        deleteLead(lead.id);
       }
+      alert('Se han borrado todos los leads');
+      onUpdate?.();
     } catch (error) {
       console.error('Error deleting:', error);
       alert('Error al borrar leads');

@@ -1,103 +1,138 @@
-import { createServerSupabaseClient } from '@/lib/supabase-server';
+'use client';
+
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { STATUS_CONFIG, type LeadStatus, type Lead } from '@/lib/types';
+import { getLeads } from '@/lib/localStorage';
 import { LeadsTable } from './LeadsTable';
 import { LeadFilters } from './LeadFilters';
 import { CreateLeadButton } from './CreateLeadButton';
 import { ExcelButtons } from './ExcelButtons';
 
-interface Props {
-  searchParams: Promise<{
-    status?: string;
-    search?: string;
-    sort?: string;
-    from?: string;
-    to?: string;
-  }>;
-}
-
-export default async function LeadsPage({ searchParams }: Props) {
-  const params = await searchParams;
-  const supabase = await createServerSupabaseClient();
-
-  let query = supabase.from('leads').select('*');
-
-  // Filter by status
-  if (params.status && params.status in STATUS_CONFIG) {
-    query = query.eq('status', params.status);
-  }
-
-  // Search filter
-  if (params.search) {
-    query = query.or(
-      `full_name.ilike.%${params.search}%,email.ilike.%${params.search}%,phone.ilike.%${params.search}%`
-    );
-  }
-
-  // Date range filter
-  if (params.from) {
-    query = query.gte('contact_date', params.from);
-  }
-  if (params.to) {
-    query = query.lte('contact_date', params.to);
-  }
-
-  // Sorting
-  switch (params.sort) {
-    case 'oldest':
-      query = query.order('created_at', { ascending: true });
-      break;
-    case 'name_asc':
-      query = query.order('full_name', { ascending: true });
-      break;
-    case 'name_desc':
-      query = query.order('full_name', { ascending: false });
-      break;
-    case 'contact_date':
-      query = query.order('contact_date', { ascending: false });
-      break;
-    default:
-      query = query.order('created_at', { ascending: false });
-  }
-
-  const { data, error } = await query;
-  const leads = (data || []) as Lead[];
-
-  const { data: allLeadsData } = await supabase.from('leads').select('status');
-  const allLeads = (allLeadsData || []) as { status: string }[];
-
-  const statusCounts: Record<LeadStatus, number> = {
+function LeadsContent() {
+  const searchParams = useSearchParams();
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
+  const [statusCounts, setStatusCounts] = useState<Record<LeadStatus, number>>({
     red: 0,
     yellow: 0,
     orange: 0,
     blue: 0,
     green: 0,
-  };
-
-  allLeads.forEach(lead => {
-    if (lead.status in statusCounts) {
-      statusCounts[lead.status as LeadStatus]++;
-    }
   });
+
+  useEffect(() => {
+    const allLeads = getLeads();
+    setLeads(allLeads);
+
+    // Count by status
+    const counts: Record<LeadStatus, number> = {
+      red: 0,
+      yellow: 0,
+      orange: 0,
+      blue: 0,
+      green: 0,
+    };
+    allLeads.forEach(lead => {
+      if (lead.status in counts) {
+        counts[lead.status as LeadStatus]++;
+      }
+    });
+    setStatusCounts(counts);
+  }, []);
+
+  useEffect(() => {
+    let result = [...leads];
+
+    // Filter by status
+    const status = searchParams.get('status');
+    if (status && status in STATUS_CONFIG) {
+      result = result.filter(l => l.status === status);
+    }
+
+    // Search filter
+    const search = searchParams.get('search')?.toLowerCase();
+    if (search) {
+      result = result.filter(l =>
+        l.full_name.toLowerCase().includes(search) ||
+        l.email?.toLowerCase().includes(search) ||
+        l.phone.toLowerCase().includes(search)
+      );
+    }
+
+    // Date range filter
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    if (from) {
+      result = result.filter(l => l.contact_date >= from);
+    }
+    if (to) {
+      result = result.filter(l => l.contact_date <= to);
+    }
+
+    // Sorting
+    const sort = searchParams.get('sort');
+    switch (sort) {
+      case 'oldest':
+        result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        break;
+      case 'name_asc':
+        result.sort((a, b) => a.full_name.localeCompare(b.full_name));
+        break;
+      case 'name_desc':
+        result.sort((a, b) => b.full_name.localeCompare(a.full_name));
+        break;
+      case 'contact_date':
+        result.sort((a, b) => new Date(b.contact_date).getTime() - new Date(a.contact_date).getTime());
+        break;
+      default:
+        result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
+    setFilteredLeads(result);
+  }, [leads, searchParams]);
+
+  const refreshLeads = () => {
+    const allLeads = getLeads();
+    setLeads(allLeads);
+
+    // Recalculate counts
+    const counts: Record<LeadStatus, number> = {
+      red: 0,
+      yellow: 0,
+      orange: 0,
+      blue: 0,
+      green: 0,
+    };
+    allLeads.forEach(lead => {
+      if (lead.status in counts) {
+        counts[lead.status as LeadStatus]++;
+      }
+    });
+    setStatusCounts(counts);
+  };
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-gray-800">Leads</h1>
         <div className="flex items-center gap-3">
-          <ExcelButtons leads={leads} />
-          <CreateLeadButton />
+          <ExcelButtons leads={filteredLeads} onUpdate={refreshLeads} />
+          <CreateLeadButton onCreated={refreshLeads} />
         </div>
       </div>
 
       <LeadFilters statusCounts={statusCounts} />
 
-      {error ? (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg">
-          Error al cargar leads: {error.message}
-        </div>
-      ) : (
-        <LeadsTable leads={leads} />
-      )}
+      <LeadsTable leads={filteredLeads} onUpdate={refreshLeads} />
     </div>
+  );
+}
+
+export default function LeadsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Cargando leads...</div>}>
+      <LeadsContent />
+    </Suspense>
   );
 }

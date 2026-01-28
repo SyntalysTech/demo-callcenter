@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getClients, createClient as createClientStorage } from '@/lib/localStorage';
 import { Client, ClientStatus, CLIENT_STATUS_CONFIG, ENERGY_PROVIDERS, EnergyProvider } from '@/lib/types';
 import { format, differenceInDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -9,7 +9,6 @@ import {
   Plus,
   Search,
   UserCheck,
-  Calendar,
   Euro,
   TrendingDown,
   Clock,
@@ -34,14 +33,10 @@ export default function ClientesPage() {
     loadClients();
   }, []);
 
-  const loadClients = async () => {
+  const loadClients = () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('clients')
-      .select('*')
-      .order('created_at', { ascending: false }) as { data: Client[] | null };
-
-    setClients(data || []);
+    const data = getClients();
+    setClients(data);
     setLoading(false);
   };
 
@@ -145,7 +140,7 @@ export default function ClientesPage() {
             </div>
             <div>
               <p className="text-sm text-gray-500">Ahorro Generado</p>
-              <p className="text-xl font-bold text-emerald-600">{stats.totalSavings.toFixed(2)}EUR</p>
+              <p className="text-xl font-bold text-emerald-600">{stats.totalSavings.toFixed(0)}€</p>
             </div>
           </div>
         </div>
@@ -158,7 +153,7 @@ export default function ClientesPage() {
             <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar por nombre, telefono o email..."
+              placeholder="Buscar por nombre, teléfono o email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
@@ -184,12 +179,12 @@ export default function ClientesPage() {
         ) : filteredClients.length === 0 ? (
           <div className="p-8 text-center">
             <UserCheck size={48} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500">No hay clientes todavia</p>
+            <p className="text-gray-500">No hay clientes todavía</p>
             <button
               onClick={() => setShowCreateModal(true)}
               className="mt-4 px-4 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition"
             >
-              Anadir primer cliente
+              Añadir primer cliente
             </button>
           </div>
         ) : (
@@ -212,9 +207,11 @@ export default function ClientesPage() {
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="font-medium text-gray-900">{client.full_name}</h3>
-                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${statusConfig.bgColor} ${statusConfig.color}`}>
-                            {statusConfig.label}
-                          </span>
+                          {statusConfig && (
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${statusConfig.bgColor} ${statusConfig.color}`}>
+                              {statusConfig.label}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
                           <span className="flex items-center gap-1">
@@ -232,46 +229,32 @@ export default function ClientesPage() {
                     </div>
 
                     <div className="flex items-center gap-6">
-                      {/* Provider */}
                       <div className="text-right">
-                        <p className="text-sm text-gray-500">Companía</p>
+                        <p className="text-sm text-gray-500">Compañía</p>
                         <p className="font-medium text-gray-900">
                           {ENERGY_PROVIDERS[client.provider as EnergyProvider]}
                         </p>
                       </div>
 
-                      {/* Monthly cost */}
                       <div className="text-right">
                         <p className="text-sm text-gray-500">Mensual</p>
-                        <p className="font-medium text-gray-900">{client.monthly_cost?.toFixed(2)}EUR</p>
+                        <p className="font-medium text-gray-900">{client.monthly_cost?.toFixed(0)}€</p>
                       </div>
 
-                      {/* Savings */}
                       {client.total_savings_to_date > 0 && (
                         <div className="text-right">
                           <p className="text-sm text-gray-500">Ahorro total</p>
                           <p className="font-medium text-emerald-600">
-                            {client.total_savings_to_date.toFixed(2)}EUR
+                            {client.total_savings_to_date.toFixed(0)}€
                           </p>
                         </div>
                       )}
 
-                      {/* Days until renewal */}
                       {daysUntilRenewal !== null && daysUntilRenewal <= 30 && (
                         <div className="text-right">
-                          <p className="text-sm text-gray-500">Renovacion</p>
+                          <p className="text-sm text-gray-500">Renovación</p>
                           <p className={`font-medium ${daysUntilRenewal <= 7 ? 'text-red-600' : 'text-orange-600'}`}>
-                            {daysUntilRenewal} dias
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Next reminder */}
-                      {client.next_reminder_date && (
-                        <div className="text-right">
-                          <p className="text-sm text-gray-500">Prox. recordatorio</p>
-                          <p className={`font-medium ${new Date(client.next_reminder_date) <= new Date() ? 'text-yellow-600' : 'text-gray-900'}`}>
-                            {format(new Date(client.next_reminder_date), "d MMM", { locale: es })}
+                            {daysUntilRenewal} días
                           </p>
                         </div>
                       )}
@@ -300,7 +283,6 @@ export default function ClientesPage() {
   );
 }
 
-// Modal para crear cliente
 function CreateClientModal({
   onClose,
   onCreated
@@ -324,17 +306,15 @@ function CreateClientModal({
     notes: '',
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const { data: { user } } = await supabase.auth.getUser();
-
     const contractEndDate = new Date(formData.signed_at);
     contractEndDate.setMonth(contractEndDate.getMonth() + parseInt(formData.contract_duration_months));
 
-    const clientData = {
+    createClientStorage({
       full_name: formData.full_name,
       email: formData.email || null,
       phone: formData.phone,
@@ -346,20 +326,10 @@ function CreateClientModal({
       contract_start_date: formData.signed_at,
       contract_end_date: contractEndDate.toISOString().split('T')[0],
       status: 'signed',
-      assigned_to: user?.id,
       notes: formData.notes || null,
-    };
+    });
 
-    const { error: insertError } = await supabase
-      .from('clients')
-      .insert(clientData as never);
-
-    if (insertError) {
-      setError('Error al crear el cliente: ' + insertError.message);
-      setLoading(false);
-      return;
-    }
-
+    setLoading(false);
     onCreated();
   };
 
@@ -396,7 +366,7 @@ function CreateClientModal({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Telefono *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
               <input
                 type="tel"
                 value={formData.phone}
@@ -417,17 +387,7 @@ function CreateClientModal({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">DNI</label>
-              <input
-                type="text"
-                value={formData.dni}
-                onChange={(e) => setFormData({ ...formData, dni: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Companía *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Compañía *</label>
               <select
                 value={formData.provider}
                 onChange={(e) => setFormData({ ...formData, provider: e.target.value as EnergyProvider })}
@@ -439,18 +399,8 @@ function CreateClientModal({
               </select>
             </div>
 
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Direccion</label>
-              <input
-                type="text"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
-              />
-            </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Coste mensual (EUR) *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Coste mensual (€) *</label>
               <input
                 type="number"
                 step="0.01"
@@ -473,7 +423,7 @@ function CreateClientModal({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Duracion contrato</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Duración contrato</label>
               <select
                 value={formData.contract_duration_months}
                 onChange={(e) => setFormData({ ...formData, contract_duration_months: e.target.value })}
@@ -483,16 +433,6 @@ function CreateClientModal({
                 <option value="12">12 meses</option>
                 <option value="24">24 meses</option>
               </select>
-            </div>
-
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
-                rows={2}
-              />
             </div>
           </div>
 

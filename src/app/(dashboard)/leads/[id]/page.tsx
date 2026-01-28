@@ -1,6 +1,8 @@
-import { createServerSupabaseClient } from '@/lib/supabase-server';
+'use client';
+
+import { useState, useEffect, use } from 'react';
+import { getLead, getNotes } from '@/lib/localStorage';
 import { STATUS_CONFIG, type LeadStatus, type Lead, type LeadNote } from '@/lib/types';
-import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -13,29 +15,48 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
-export default async function LeadDetailPage({ params }: Props) {
-  const { id } = await params;
-  const supabase = await createServerSupabaseClient();
+export default function LeadDetailPage({ params }: Props) {
+  const { id } = use(params);
+  const [lead, setLead] = useState<Lead | null>(null);
+  const [notes, setNotes] = useState<LeadNote[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const { data, error } = await supabase
-    .from('leads')
-    .select('*')
-    .eq('id', id)
-    .single();
+  const loadData = () => {
+    const leadData = getLead(id);
+    setLead(leadData);
+    if (leadData) {
+      const notesData = getNotes(id);
+      setNotes(notesData.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    }
+    setLoading(false);
+  };
 
-  if (error || !data) {
-    notFound();
+  useEffect(() => {
+    loadData();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center">
+        <div className="text-gray-500">Cargando lead...</div>
+      </div>
+    );
   }
 
-  const lead = data as Lead;
+  if (!lead) {
+    return (
+      <div className="p-8">
+        <div className="text-center">
+          <FileText size={48} className="mx-auto text-gray-300 mb-3" />
+          <p className="text-gray-500">Lead no encontrado</p>
+          <Link href="/leads" className="text-brand-primary hover:underline mt-2 inline-block">
+            Volver a leads
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
-  const { data: notesData } = await supabase
-    .from('lead_notes')
-    .select('*')
-    .eq('lead_id', id)
-    .order('created_at', { ascending: false });
-
-  const notes = (notesData || []) as LeadNote[];
   const config = STATUS_CONFIG[lead.status as LeadStatus];
 
   return (
@@ -103,7 +124,7 @@ export default async function LeadDetailPage({ params }: Props) {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Estado</p>
-                  <StatusSelect leadId={lead.id} currentStatus={lead.status as LeadStatus} />
+                  <StatusSelect leadId={lead.id} currentStatus={lead.status as LeadStatus} onUpdate={loadData} />
                 </div>
               </div>
             </div>
@@ -118,8 +139,8 @@ export default async function LeadDetailPage({ params }: Props) {
 
           <div className="bg-white rounded-xl shadow-sm p-6">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Historial de notas</h2>
-            <AddNoteForm leadId={lead.id} />
-            <NotesList notes={notes} />
+            <AddNoteForm leadId={lead.id} onCreated={loadData} />
+            <NotesList notes={notes} onUpdate={loadData} />
           </div>
         </div>
 

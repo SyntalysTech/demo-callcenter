@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import confetti from 'canvas-confetti';
-import { updateLead } from '@/lib/api';
+import { updateLead } from '@/lib/localStorage';
 import { STATUS_CONFIG, type Lead, type LeadStatus } from '@/lib/types';
 
 // Confetti celebration for converted leads
@@ -52,12 +52,12 @@ export function EditLeadForm({ lead }: Props) {
     notes: lead.notes || '',
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { error } = await updateLead(lead.id, {
+    const result = updateLead(lead.id, {
       full_name: formData.full_name,
       email: formData.email || null,
       phone: formData.phone,
@@ -66,8 +66,8 @@ export function EditLeadForm({ lead }: Props) {
       notes: formData.notes || null,
     });
 
-    if (error) {
-      setError(error.message);
+    if (!result) {
+      setError('Error al guardar los cambios');
       setLoading(false);
     } else {
       // Celebrate when lead is converted to green (signed)!
@@ -75,7 +75,6 @@ export function EditLeadForm({ lead }: Props) {
         triggerConfetti();
       }
       router.push('/leads/' + lead.id);
-      router.refresh();
     }
   };
 

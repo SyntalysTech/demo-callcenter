@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { ClientReminder, ReminderType, REMINDER_TYPE_CONFIG, Client } from '@/lib/types';
+import { getReminders, updateReminder, getLeads } from '@/lib/localStorage';
 import { format, isToday, isTomorrow, isPast, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -13,49 +12,38 @@ import {
   Clock,
   AlertTriangle,
   ChevronRight,
-  Filter,
   RefreshCw,
   X,
-  MessageSquare,
   PhoneOff,
   CalendarClock
 } from 'lucide-react';
 import Link from 'next/link';
 
-type ReminderWithClient = ClientReminder & { client?: Client };
+interface DemoReminder {
+  id: string;
+  lead_id: string;
+  lead_name: string;
+  date: string;
+  time: string;
+  note: string;
+  completed: boolean;
+  created_at: string;
+}
 
 export default function RecordatoriosPage() {
-  const [reminders, setReminders] = useState<ReminderWithClient[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
+  const [reminders, setReminders] = useState<DemoReminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'pending' | 'today' | 'week' | 'completed'>('pending');
-  const [selectedReminder, setSelectedReminder] = useState<ReminderWithClient | null>(null);
+  const [selectedReminder, setSelectedReminder] = useState<DemoReminder | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadData = () => {
     setLoading(true);
-
-    const { data: remindersData } = await supabase
-      .from('client_reminders')
-      .select('*')
-      .order('scheduled_date', { ascending: true }) as { data: ClientReminder[] | null };
-
-    const { data: clientsData } = await supabase
-      .from('clients')
-      .select('*') as { data: Client[] | null };
-
-    if (remindersData && clientsData) {
-      const remindersWithClients = remindersData.map(reminder => ({
-        ...reminder,
-        client: clientsData.find(c => c.id === reminder.client_id)
-      }));
-      setReminders(remindersWithClients);
-    }
-
-    setClients(clientsData || []);
+    const data = getReminders();
+    setReminders(data);
     setLoading(false);
   };
 
@@ -67,12 +55,12 @@ export default function RecordatoriosPage() {
 
     switch (filter) {
       case 'pending':
-        return reminders.filter(r => !r.completed && isPast(new Date(r.scheduled_date)));
+        return reminders.filter(r => !r.completed && isPast(new Date(r.date)));
       case 'today':
-        return reminders.filter(r => !r.completed && isToday(new Date(r.scheduled_date)));
+        return reminders.filter(r => !r.completed && isToday(new Date(r.date)));
       case 'week':
         return reminders.filter(r => {
-          const date = new Date(r.scheduled_date);
+          const date = new Date(r.date);
           return !r.completed && date >= today && date <= weekFromNow;
         });
       case 'completed':
@@ -85,89 +73,31 @@ export default function RecordatoriosPage() {
   const filteredReminders = getFilteredReminders();
 
   const stats = {
-    overdue: reminders.filter(r => !r.completed && isPast(new Date(r.scheduled_date)) && !isToday(new Date(r.scheduled_date))).length,
-    today: reminders.filter(r => !r.completed && isToday(new Date(r.scheduled_date))).length,
-    tomorrow: reminders.filter(r => !r.completed && isTomorrow(new Date(r.scheduled_date))).length,
+    overdue: reminders.filter(r => !r.completed && isPast(new Date(r.date)) && !isToday(new Date(r.date))).length,
+    today: reminders.filter(r => !r.completed && isToday(new Date(r.date))).length,
+    tomorrow: reminders.filter(r => !r.completed && isTomorrow(new Date(r.date))).length,
     thisWeek: reminders.filter(r => {
-      const date = new Date(r.scheduled_date);
+      const date = new Date(r.date);
       return !r.completed && date >= new Date() && date <= addDays(new Date(), 7);
     }).length,
   };
 
-  const handleMarkComplete = async (reminder: ReminderWithClient, result: 'contacted' | 'no_answer' | 'rescheduled' | 'completed') => {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    await supabase
-      .from('client_reminders')
-      .update({
-        completed: true,
-        completed_at: new Date().toISOString(),
-        completed_by: user?.id,
-        result
-      } as never)
-      .eq('id', reminder.id);
-
-    // Actualizar el estado del cliente
-    if (reminder.client_id) {
-      const statusMap: Record<ReminderType, string> = {
-        day1_welcome: 'reminder_day1',
-        week1_confirmation: 'reminder_week1',
-        month2_checkup: 'reminder_month2',
-        month4_checkup: 'reminder_month4',
-        month6_checkup: 'reminder_month6',
-        month12_renewal: 'reminder_month12',
-        referral_program: 'reminder_month2',
-      };
-
-      await supabase
-        .from('clients')
-        .update({
-          status: statusMap[reminder.reminder_type as ReminderType],
-          last_reminder_sent: new Date().toISOString()
-        } as never)
-        .eq('id', reminder.client_id);
-    }
-
+  const handleMarkComplete = (reminder: DemoReminder) => {
+    updateReminder(reminder.id, { completed: true });
     setSelectedReminder(null);
     loadData();
   };
 
-  const handleReschedule = async (reminder: ReminderWithClient, newDate: string) => {
-    await supabase
-      .from('client_reminders')
-      .update({
-        scheduled_date: newDate,
-        result: 'rescheduled'
-      } as never)
-      .eq('id', reminder.id);
-
+  const handleReschedule = (reminder: DemoReminder, newDate: string) => {
+    updateReminder(reminder.id, { date: newDate });
     setSelectedReminder(null);
     loadData();
-  };
-
-  const getReminderIcon = (type: ReminderType) => {
-    switch (type) {
-      case 'day1_welcome':
-        return <Bell className="text-blue-500" size={18} />;
-      case 'week1_confirmation':
-        return <Check className="text-green-500" size={18} />;
-      case 'month2_checkup':
-      case 'month4_checkup':
-      case 'month6_checkup':
-        return <Phone className="text-purple-500" size={18} />;
-      case 'month12_renewal':
-        return <RefreshCw className="text-orange-500" size={18} />;
-      case 'referral_program':
-        return <MessageSquare className="text-pink-500" size={18} />;
-      default:
-        return <Bell className="text-gray-500" size={18} />;
-    }
   };
 
   const getDateLabel = (dateStr: string) => {
     const date = new Date(dateStr);
     if (isToday(date)) return 'Hoy';
-    if (isTomorrow(date)) return 'Manana';
+    if (isTomorrow(date)) return 'Mañana';
     if (isPast(date)) return 'Atrasado';
     return format(date, "d MMM", { locale: es });
   };
@@ -186,7 +116,7 @@ export default function RecordatoriosPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Recordatorios</h1>
-          <p className="text-gray-500">Gestiona los seguimientos de tus clientes</p>
+          <p className="text-gray-500">Gestiona los seguimientos de tus leads y clientes</p>
         </div>
         <button
           onClick={loadData}
@@ -279,72 +209,63 @@ export default function RecordatoriosPage() {
         ) : filteredReminders.length === 0 ? (
           <div className="p-8 text-center">
             <Bell size={48} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500">No hay recordatorios en esta categoria</p>
+            <p className="text-gray-500">No hay recordatorios en esta categoría</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {filteredReminders.map((reminder) => {
-              const config = REMINDER_TYPE_CONFIG[reminder.reminder_type as ReminderType];
-
-              return (
-                <div
-                  key={reminder.id}
-                  className={`p-4 hover:bg-gray-50 transition ${reminder.completed ? 'opacity-60' : ''}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                        {getReminderIcon(reminder.reminder_type as ReminderType)}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-gray-900">{reminder.client?.full_name || 'Cliente'}</h3>
-                          <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                            {config?.label}
+            {filteredReminders.map((reminder) => (
+              <div
+                key={reminder.id}
+                className={`p-4 hover:bg-gray-50 transition ${reminder.completed ? 'opacity-60' : ''}`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                      <Phone className="text-purple-500" size={18} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium text-gray-900">{reminder.lead_name}</h3>
+                        {reminder.completed && (
+                          <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-600 rounded-full">
+                            Completado
                           </span>
-                          {reminder.completed && (
-                            <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-600 rounded-full">
-                              Completado
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-500 mt-1">{config?.description}</p>
-                        {reminder.client?.phone && (
-                          <p className="text-sm text-gray-400 mt-1">Tel: {reminder.client.phone}</p>
                         )}
                       </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className={`font-medium ${getDateColor(reminder.scheduled_date, reminder.completed)}`}>
-                          {getDateLabel(reminder.scheduled_date)}
-                        </p>
-                        <p className="text-sm text-gray-400">
-                          {format(new Date(reminder.scheduled_date), "d MMM yyyy", { locale: es })}
-                        </p>
-                      </div>
-
-                      {!reminder.completed && (
-                        <button
-                          onClick={() => setSelectedReminder(reminder)}
-                          className="px-3 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition text-sm"
-                        >
-                          Completar
-                        </button>
-                      )}
-
-                      <Link
-                        href={`/clientes/${reminder.client_id}`}
-                        className="p-2 hover:bg-gray-100 rounded-lg"
-                      >
-                        <ChevronRight size={20} className="text-gray-400" />
-                      </Link>
+                      <p className="text-sm text-gray-500 mt-1">{reminder.note}</p>
+                      <p className="text-sm text-gray-400 mt-1">Hora: {reminder.time}</p>
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className={`font-medium ${getDateColor(reminder.date, reminder.completed)}`}>
+                        {getDateLabel(reminder.date)}
+                      </p>
+                      <p className="text-sm text-gray-400">
+                        {format(new Date(reminder.date), "d MMM yyyy", { locale: es })}
+                      </p>
+                    </div>
+
+                    {!reminder.completed && (
+                      <button
+                        onClick={() => setSelectedReminder(reminder)}
+                        className="px-3 py-2 bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition text-sm"
+                      >
+                        Completar
+                      </button>
+                    )}
+
+                    <Link
+                      href={`/leads/${reminder.lead_id}`}
+                      className="p-2 hover:bg-gray-100 rounded-lg"
+                    >
+                      <ChevronRight size={20} className="text-gray-400" />
+                    </Link>
+                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -362,21 +283,19 @@ export default function RecordatoriosPage() {
   );
 }
 
-// Modal para completar recordatorio
 function CompleteReminderModal({
   reminder,
   onClose,
   onComplete,
   onReschedule
 }: {
-  reminder: ReminderWithClient;
+  reminder: DemoReminder;
   onClose: () => void;
-  onComplete: (reminder: ReminderWithClient, result: 'contacted' | 'no_answer' | 'rescheduled' | 'completed') => void;
-  onReschedule: (reminder: ReminderWithClient, newDate: string) => void;
+  onComplete: (reminder: DemoReminder) => void;
+  onReschedule: (reminder: DemoReminder, newDate: string) => void;
 }) {
   const [showReschedule, setShowReschedule] = useState(false);
   const [newDate, setNewDate] = useState('');
-  const config = REMINDER_TYPE_CONFIG[reminder.reminder_type as ReminderType];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -392,34 +311,34 @@ function CompleteReminderModal({
 
         <div className="p-6 space-y-4">
           <div className="bg-gray-50 rounded-lg p-4">
-            <p className="font-medium text-gray-900">{reminder.client?.full_name}</p>
-            <p className="text-sm text-gray-500">{config?.label}</p>
-            <p className="text-sm text-gray-400 mt-1">{config?.description}</p>
+            <p className="font-medium text-gray-900">{reminder.lead_name}</p>
+            <p className="text-sm text-gray-500">{reminder.note}</p>
+            <p className="text-sm text-gray-400 mt-1">{reminder.time}</p>
           </div>
 
           {!showReschedule ? (
             <div className="space-y-3">
-              <p className="text-sm font-medium text-gray-700">Resultado de la llamada:</p>
+              <p className="text-sm font-medium text-gray-700">Resultado:</p>
 
               <button
-                onClick={() => onComplete(reminder, 'contacted')}
+                onClick={() => onComplete(reminder)}
                 className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-green-50 hover:border-green-300 transition"
               >
                 <Phone size={20} className="text-green-600" />
                 <div className="text-left">
                   <p className="font-medium text-gray-900">Contactado</p>
-                  <p className="text-sm text-gray-500">Se hablo con el cliente</p>
+                  <p className="text-sm text-gray-500">Se habló con el lead</p>
                 </div>
               </button>
 
               <button
-                onClick={() => onComplete(reminder, 'no_answer')}
+                onClick={() => onComplete(reminder)}
                 className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-yellow-50 hover:border-yellow-300 transition"
               >
                 <PhoneOff size={20} className="text-yellow-600" />
                 <div className="text-left">
-                  <p className="font-medium text-gray-900">No contesto</p>
-                  <p className="text-sm text-gray-500">El cliente no atendio</p>
+                  <p className="font-medium text-gray-900">No contestó</p>
+                  <p className="text-sm text-gray-500">El lead no atendió</p>
                 </div>
               </button>
 
@@ -435,13 +354,13 @@ function CompleteReminderModal({
               </button>
 
               <button
-                onClick={() => onComplete(reminder, 'completed')}
+                onClick={() => onComplete(reminder)}
                 className="w-full flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-100 transition"
               >
                 <Check size={20} className="text-gray-600" />
                 <div className="text-left">
                   <p className="font-medium text-gray-900">Marcar completado</p>
-                  <p className="text-sm text-gray-500">Sin mas acciones</p>
+                  <p className="text-sm text-gray-500">Sin más acciones</p>
                 </div>
               </button>
             </div>

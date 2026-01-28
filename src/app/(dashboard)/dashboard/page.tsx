@@ -1,51 +1,76 @@
-import { createServerSupabaseClient } from '@/lib/supabase-server';
+'use client';
+
+import { useEffect, useState } from 'react';
 import { STATUS_CONFIG, type LeadStatus, type Lead } from '@/lib/types';
-import { Users, UserPlus, TrendingUp, Calendar } from 'lucide-react';
+import { getLeads, getStats, getClients, getReminders } from '@/lib/localStorage';
+import { Users, UserPlus, TrendingUp, Calendar, DollarSign, Bell, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-async function getStats() {
-  const supabase = await createServerSupabaseClient();
-
-  const { data } = await supabase.from('leads').select('*');
-  const leads = (data || []) as Lead[];
-
-  const sevenDaysAgo = subDays(new Date(), 7);
-  const new7days = leads.filter(l => new Date(l.created_at) >= sevenDaysAgo).length;
-
-  const byStatus: Record<LeadStatus, number> = {
-    red: 0,
-    yellow: 0,
-    orange: 0,
-    blue: 0,
-    green: 0,
-  };
-
-  leads.forEach(lead => {
-    if (lead.status in byStatus) {
-      byStatus[lead.status as LeadStatus]++;
-    }
+export default function DashboardPage() {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    new7days: 0,
+    byStatus: { red: 0, yellow: 0, orange: 0, blue: 0, green: 0 } as Record<LeadStatus, number>,
+    recentLeads: [] as Lead[],
+    totalClients: 0,
+    totalSavings: 0,
+    pendingReminders: 0,
   });
 
-  const recentLeads = leads
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
+  useEffect(() => {
+    const allLeads = getLeads();
+    const globalStats = getStats();
+    const clients = getClients();
+    const reminders = getReminders();
 
-  return {
-    total: leads.length,
-    new7days,
-    byStatus,
-    recentLeads,
-  };
-}
+    const sevenDaysAgo = subDays(new Date(), 7);
+    const new7days = allLeads.filter(l => new Date(l.created_at) >= sevenDaysAgo).length;
 
-export default async function DashboardPage() {
-  const stats = await getStats();
+    const byStatus: Record<LeadStatus, number> = {
+      red: 0,
+      yellow: 0,
+      orange: 0,
+      blue: 0,
+      green: 0,
+    };
+
+    allLeads.forEach(lead => {
+      if (lead.status in byStatus) {
+        byStatus[lead.status as LeadStatus]++;
+      }
+    });
+
+    const recentLeads = [...allLeads]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5);
+
+    setLeads(allLeads);
+    setStats({
+      total: allLeads.length,
+      new7days,
+      byStatus,
+      recentLeads,
+      totalClients: clients.length,
+      totalSavings: globalStats.totalSavings,
+      pendingReminders: reminders.filter(r => !r.completed).length,
+    });
+  }, []);
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold text-gray-800 mb-8">Dashboard</h1>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
+          <p className="text-gray-500">Resumen de actividad del CRM</p>
+        </div>
+        <div className="px-4 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium flex items-center gap-2">
+          <Zap size={16} />
+          Modo Demo - LocalStorage
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-xl shadow-sm p-6">
@@ -66,7 +91,7 @@ export default async function DashboardPage() {
               <UserPlus className="text-blue-600" size={24} />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Nuevos (7 dias)</p>
+              <p className="text-sm text-gray-500">Nuevos (7 días)</p>
               <p className="text-2xl font-bold text-gray-800">{stats.new7days}</p>
             </div>
           </div>
@@ -78,28 +103,26 @@ export default async function DashboardPage() {
               <TrendingUp className="text-green-600" size={24} />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Cerrados</p>
-              <p className="text-2xl font-bold text-gray-800">{stats.byStatus.green}</p>
+              <p className="text-sm text-gray-500">Clientes Activos</p>
+              <p className="text-2xl font-bold text-gray-800">{stats.totalClients}</p>
             </div>
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-yellow-100 rounded-lg">
-              <Calendar className="text-yellow-600" size={24} />
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <DollarSign className="text-purple-600" size={24} />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Pendientes</p>
-              <p className="text-2xl font-bold text-gray-800">
-                {stats.byStatus.yellow + stats.byStatus.orange + stats.byStatus.blue}
-              </p>
+              <p className="text-sm text-gray-500">Ahorro Total</p>
+              <p className="text-2xl font-bold text-gray-800">{stats.totalSavings}€</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">Leads por Estado</h2>
           <div className="space-y-3">
@@ -121,14 +144,14 @@ export default async function DashboardPage() {
 
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800">Ultimos Leads</h2>
+            <h2 className="text-lg font-semibold text-gray-800">Últimos Leads</h2>
             <Link href="/leads" className="text-brand-primary hover:underline text-sm">
               Ver todos
             </Link>
           </div>
           <div className="space-y-3">
             {stats.recentLeads.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No hay leads todavia</p>
+              <p className="text-gray-500 text-center py-8">No hay leads todavía</p>
             ) : (
               stats.recentLeads.map((lead) => (
                 <Link
@@ -150,6 +173,28 @@ export default async function DashboardPage() {
               ))
             )}
           </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Recordatorios</h2>
+            <Link href="/recordatorios" className="text-brand-primary hover:underline text-sm">
+              Ver todos
+            </Link>
+          </div>
+          <div className="text-center py-6">
+            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Bell className="text-orange-600" size={28} />
+            </div>
+            <p className="text-3xl font-bold text-gray-800">{stats.pendingReminders}</p>
+            <p className="text-gray-500">Pendientes</p>
+          </div>
+          <Link
+            href="/recordatorios"
+            className="block w-full text-center py-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition font-medium"
+          >
+            Gestionar recordatorios
+          </Link>
         </div>
       </div>
     </div>

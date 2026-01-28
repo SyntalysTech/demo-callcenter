@@ -1,16 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Plus, X } from 'lucide-react';
-import { createLead } from '@/lib/api';
+import { createLead } from '@/lib/localStorage';
 import { STATUS_CONFIG, type LeadStatus } from '@/lib/types';
 
-export function CreateLeadButton() {
-  const router = useRouter();
+interface Props {
+  onCreated?: () => void;
+}
+
+export function CreateLeadButton({ onCreated }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     full_name: '',
@@ -21,37 +22,31 @@ export function CreateLeadButton() {
     notes: '',
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
 
-    const { error } = await createLead({
+    createLead({
       full_name: formData.full_name,
       email: formData.email || null,
       phone: formData.phone,
       contact_date: formData.contact_date,
       status: formData.status,
       notes: formData.notes || null,
-      assigned_to: null,
+      assigned_to: 'demo-user',
     });
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
-      setIsOpen(false);
-      setFormData({
-        full_name: '',
-        email: '',
-        phone: '',
-        contact_date: new Date().toISOString().split('T')[0],
-        status: 'yellow',
-        notes: '',
-      });
-      router.refresh();
-    }
+    setIsOpen(false);
+    setFormData({
+      full_name: '',
+      email: '',
+      phone: '',
+      contact_date: new Date().toISOString().split('T')[0],
+      status: 'yellow',
+      notes: '',
+    });
     setLoading(false);
+    onCreated?.();
   };
 
   return (
@@ -93,7 +88,7 @@ export function CreateLeadButton() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Telefono *
+                  Teléfono *
                 </label>
                 <input
                   type="tel"
@@ -156,12 +151,6 @@ export function CreateLeadButton() {
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-primary focus:border-transparent outline-none resize-none"
                 />
               </div>
-
-              {error && (
-                <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
 
               <div className="flex gap-3 pt-4">
                 <button

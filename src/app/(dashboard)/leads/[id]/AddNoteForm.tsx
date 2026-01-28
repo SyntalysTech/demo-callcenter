@@ -1,31 +1,31 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Send } from 'lucide-react';
-import { createLeadNote } from '@/lib/api';
+import { createNote } from '@/lib/localStorage';
 
 interface Props {
   leadId: string;
+  onCreated?: () => void;
 }
 
-export function AddNoteForm({ leadId }: Props) {
-  const router = useRouter();
+export function AddNoteForm({ leadId, onCreated }: Props) {
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!note.trim()) return;
 
     setLoading(true);
-    const { error } = await createLeadNote(leadId, note.trim());
+    createNote({
+      lead_id: leadId,
+      note: note.trim(),
+    });
 
-    if (!error) {
-      setNote('');
-      router.refresh();
-    }
+    setNote('');
     setLoading(false);
+    onCreated?.();
   };
 
   return (

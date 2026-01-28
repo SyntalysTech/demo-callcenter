@@ -1,28 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Trash2 } from 'lucide-react';
-import { deleteLeadNote } from '@/lib/api';
+import { deleteNote } from '@/lib/localStorage';
 import type { LeadNote } from '@/lib/types';
 
 interface Props {
   notes: LeadNote[];
+  onUpdate?: () => void;
 }
 
-export function NotesList({ notes }: Props) {
-  const router = useRouter();
+export function NotesList({ notes, onUpdate }: Props) {
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const handleDelete = async (noteId: string) => {
+  const handleDelete = (noteId: string) => {
     setDeleting(noteId);
-    const { error } = await deleteLeadNote(noteId);
-    if (!error) {
-      router.refresh();
-    }
+    deleteNote(noteId);
     setDeleting(null);
+    onUpdate?.();
   };
 
   if (notes.length === 0) {

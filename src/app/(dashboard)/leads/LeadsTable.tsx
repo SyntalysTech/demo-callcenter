@@ -2,29 +2,26 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Eye, Pencil, Trash2 } from 'lucide-react';
-import { deleteLead } from '@/lib/api';
+import { deleteLead as deleteLeadFromStorage } from '@/lib/localStorage';
 import { STATUS_CONFIG, type Lead, type LeadStatus } from '@/lib/types';
 import { StatusSelect } from './StatusSelect';
 
 interface Props {
   leads: Lead[];
+  onUpdate?: () => void;
 }
 
-export function LeadsTable({ leads }: Props) {
-  const router = useRouter();
+export function LeadsTable({ leads, onUpdate }: Props) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     setDeleting(id);
-    const { error } = await deleteLead(id);
-    if (!error) {
-      router.refresh();
-    }
+    deleteLeadFromStorage(id);
+    onUpdate?.();
     setDeleting(null);
     setShowDeleteModal(null);
   };
@@ -45,11 +42,11 @@ export function LeadsTable({ leads }: Props) {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Nombre</th>
-                <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Telefono</th>
+                <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Teléfono</th>
                 <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Email</th>
                 <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Fecha contacto</th>
                 <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Estado</th>
-                <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Ultima nota</th>
+                <th className="text-left px-6 py-4 text-sm font-semibold text-gray-600">Última nota</th>
                 <th className="text-right px-6 py-4 text-sm font-semibold text-gray-600">Acciones</th>
               </tr>
             </thead>
@@ -67,7 +64,7 @@ export function LeadsTable({ leads }: Props) {
                     {format(new Date(lead.contact_date), 'dd MMM yyyy', { locale: es })}
                   </td>
                   <td className="px-6 py-4">
-                    <StatusSelect leadId={lead.id} currentStatus={lead.status as LeadStatus} />
+                    <StatusSelect leadId={lead.id} currentStatus={lead.status as LeadStatus} onUpdate={onUpdate} />
                   </td>
                   <td className="px-6 py-4 text-gray-500 text-sm max-w-[200px] truncate">
                     {lead.notes || '-'}
@@ -109,7 +106,7 @@ export function LeadsTable({ leads }: Props) {
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Eliminar lead</h3>
             <p className="text-gray-600 mb-6">
-              Esta seguro de que desea eliminar este lead? Esta accion no se puede deshacer.
+              ¿Está seguro de que desea eliminar este lead? Esta acción no se puede deshacer.
             </p>
             <div className="flex gap-3 justify-end">
               <button

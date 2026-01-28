@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { UserRole } from '@/lib/types';
 import {
   LayoutDashboard,
   Users,
@@ -15,8 +13,6 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
-  Settings,
-  UserCog,
   Zap,
   UserCheck,
   Bell,
@@ -54,36 +50,16 @@ const callCenterItems = [
   { href: '/call-center/metricas', label: 'Metricas', icon: BarChart3, active: false },
 ];
 
-const adminItems = [
-  { href: '/admin/usuarios', label: 'Usuarios', icon: UserCog },
-];
-
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed');
     if (saved) setCollapsed(JSON.parse(saved));
     setMounted(true);
-    loadUserRole();
   }, []);
-
-  const loadUserRole = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single() as { data: { role: string } | null };
-      if (data) {
-        setUserRole(data.role as UserRole);
-      }
-    }
-  };
 
   useEffect(() => {
     if (mounted) {
@@ -91,14 +67,12 @@ export function Sidebar() {
     }
   }, [collapsed, mounted]);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    // Demo mode - just redirect to login page
     window.location.replace('/login');
   };
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
-
-  const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
 
   return (
     <aside
@@ -270,41 +244,6 @@ export function Sidebar() {
             ))}
           </ul>
         </div>
-
-        {/* Admin Section - Only for admin/manager */}
-        {isAdminOrManager && (
-          <>
-            <div className="h-px bg-white/10 mx-1 mb-4" />
-            <div>
-              {!collapsed && (
-                <div className="flex items-center gap-1.5 px-2 mb-1.5">
-                  <Settings size={12} className="text-brand-text/50" />
-                  <p className="text-[10px] font-semibold text-brand-text/50 uppercase tracking-wider">
-                    Administracion
-                  </p>
-                </div>
-              )}
-              <ul className="space-y-0.5">
-                {adminItems.map((item) => (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      className={`flex items-center py-2 rounded-lg transition-all duration-200 text-sm ${
-                        isActive(item.href)
-                          ? 'bg-white/20 text-white'
-                          : 'text-brand-text hover:bg-white/10'
-                      } ${collapsed ? 'justify-center px-2' : 'gap-2.5 px-2.5'}`}
-                      title={collapsed ? item.label : undefined}
-                    >
-                      <item.icon size={18} className="flex-shrink-0" />
-                      {!collapsed && <span>{item.label}</span>}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </>
-        )}
       </nav>
 
       {/* Bottom section */}
