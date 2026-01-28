@@ -1,173 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-// Crear cliente de Supabase con service role para acceso completo
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
-// Obtener datos del CRM para contexto
-async function getCRMContext() {
+// Datos mock para el contexto del CRM (modo demo)
+function getCRMContext() {
   const today = new Date().toISOString().split('T')[0];
-  const thisMonth = new Date();
-  thisMonth.setDate(1);
-  const startOfMonth = thisMonth.toISOString().split('T')[0];
-
-  // Obtener leads
-  const { data: leads, count: leadsCount } = await supabaseAdmin
-    .from('leads')
-    .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .limit(100);
-
-  // Estadisticas de leads por estado
-  const leadsByStatus = {
-    red: leads?.filter(l => l.status === 'red').length || 0,
-    yellow: leads?.filter(l => l.status === 'yellow').length || 0,
-    orange: leads?.filter(l => l.status === 'orange').length || 0,
-    blue: leads?.filter(l => l.status === 'blue').length || 0,
-    green: leads?.filter(l => l.status === 'green').length || 0,
-  };
-
-  // Leads de este mes
-  const leadsThisMonth = leads?.filter(l => l.created_at >= startOfMonth).length || 0;
-
-  // Obtener clientes
-  const { data: clients, count: clientsCount } = await supabaseAdmin
-    .from('clients')
-    .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .limit(100);
-
-  // Clientes por estado
-  const clientsByStatus = {
-    pending: clients?.filter(c => c.status === 'pending').length || 0,
-    active: clients?.filter(c => c.status === 'active').length || 0,
-    signed: clients?.filter(c => c.status === 'signed').length || 0,
-    cancelled: clients?.filter(c => c.status === 'cancelled').length || 0,
-  };
-
-  // Clientes con contrato proximo a vencer (30 dias)
-  const thirtyDaysFromNow = new Date();
-  thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-  const expiringContracts = clients?.filter(c => {
-    if (!c.contract_end_date) return false;
-    const endDate = new Date(c.contract_end_date);
-    return endDate <= thirtyDaysFromNow && endDate >= new Date();
-  }) || [];
-
-  // Obtener estudios de energia
-  const { data: studies } = await supabaseAdmin
-    .from('energy_studies')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(50);
-
-  // Calcular ahorro promedio
-  const studiesWithSavings = studies?.filter(s => s.estimated_annual_savings) || [];
-  const avgSavings = studiesWithSavings.length > 0
-    ? studiesWithSavings.reduce((sum, s) => sum + (s.estimated_annual_savings || 0), 0) / studiesWithSavings.length
-    : 0;
-
-  // Obtener recordatorios
-  const { data: reminders } = await supabaseAdmin
-    .from('client_reminders')
-    .select('*, clients(full_name)')
-    .order('scheduled_date', { ascending: true })
-    .limit(50);
-
-  const todayReminders = reminders?.filter(r => r.scheduled_date === today && r.status === 'pending') || [];
-  const pendingReminders = reminders?.filter(r => r.status === 'pending') || [];
-
-  // Obtener referidos
-  const { data: referrals } = await supabaseAdmin
-    .from('referrals')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(50);
-
-  const pendingReferralPayments = referrals?.filter(r => r.status === 'signed' && !r.reward_paid) || [];
-  const totalReferralRewards = referrals?.filter(r => r.reward_paid).reduce((sum, r) => sum + (r.reward_amount || 0), 0) || 0;
 
   return {
-    // Resumen
     summary: {
-      totalLeads: leadsCount || 0,
-      totalClients: clientsCount || 0,
-      leadsThisMonth,
-      todayRemindersCount: todayReminders.length,
-      pendingRemindersCount: pendingReminders.length,
-      expiringContractsCount: expiringContracts.length,
+      totalLeads: 8,
+      totalClients: 2,
+      leadsThisMonth: 5,
+      todayRemindersCount: 1,
+      pendingRemindersCount: 3,
+      expiringContractsCount: 0,
     },
-    // Leads detalle
     leads: {
-      byStatus: leadsByStatus,
-      recent: leads?.slice(0, 10).map(l => ({
-        name: l.full_name,
-        phone: l.phone,
-        email: l.email,
-        status: l.status,
-        contactDate: l.contact_date,
-        notes: l.notes,
-      })) || [],
+      byStatus: {
+        red: 1,
+        yellow: 3,
+        orange: 2,
+        blue: 1,
+        green: 1,
+      },
+      recent: [
+        { name: 'Maria Garcia Lopez', phone: '612345678', email: 'maria@email.com', status: 'yellow', contactDate: '2024-01-15', notes: 'Interesada en cambio de tarifa' },
+        { name: 'Antonio Martinez Ruiz', phone: '623456789', email: 'antonio@email.com', status: 'blue', contactDate: '2024-01-14', notes: 'Solicita estudio energetico' },
+        { name: 'Carmen Fernandez', phone: '634567890', email: null, status: 'orange', contactDate: '2024-01-13', notes: 'Llamar la semana que viene' },
+        { name: 'Jose Rodriguez', phone: '645678901', email: 'jose@email.com', status: 'green', contactDate: '2024-01-12', notes: 'Contrato firmado' },
+        { name: 'Ana Sanchez', phone: '656789012', email: null, status: 'red', contactDate: '2024-01-11', notes: 'No le interesa' },
+      ],
     },
-    // Clientes detalle
     clients: {
-      byStatus: clientsByStatus,
-      expiringContracts: expiringContracts.map(c => ({
-        name: c.full_name,
-        phone: c.phone,
-        provider: c.current_provider,
-        contractEnd: c.contract_end_date,
-      })),
-      recent: clients?.slice(0, 10).map(c => ({
-        name: c.full_name,
-        phone: c.phone,
-        status: c.status,
-        provider: c.current_provider,
-        signedDate: c.signed_date,
-      })) || [],
+      byStatus: {
+        pending: 0,
+        active: 2,
+        signed: 0,
+        cancelled: 0,
+      },
+      expiringContracts: [],
+      recent: [
+        { name: 'Jose Rodriguez Perez', phone: '645678901', status: 'active', provider: 'Iberdrola', signedDate: '2024-01-10' },
+        { name: 'Laura Gomez Martinez', phone: '667890123', status: 'active', provider: 'Endesa', signedDate: '2024-01-05' },
+      ],
     },
-    // Estudios
     studies: {
-      total: studies?.length || 0,
-      avgAnnualSavings: Math.round(avgSavings * 100) / 100,
+      total: 2,
+      avgAnnualSavings: 285,
       byType: {
-        withInvoice: studies?.filter(s => s.study_type === 'with_invoice').length || 0,
-        withoutInvoice: studies?.filter(s => s.study_type === 'without_invoice').length || 0,
+        withInvoice: 1,
+        withoutInvoice: 1,
       },
     },
-    // Recordatorios
     reminders: {
-      today: todayReminders.map(r => ({
-        type: r.reminder_type,
-        clientName: (r.clients as { full_name: string } | null)?.full_name || 'N/A',
-        date: r.scheduled_date,
-      })),
-      pending: pendingReminders.slice(0, 10).map(r => ({
-        type: r.reminder_type,
-        clientName: (r.clients as { full_name: string } | null)?.full_name || 'N/A',
-        date: r.scheduled_date,
-      })),
+      today: [
+        { type: 'Llamada de seguimiento', clientName: 'Jose Rodriguez Perez', date: today },
+      ],
+      pending: [
+        { type: 'Llamada de seguimiento', clientName: 'Jose Rodriguez Perez', date: today },
+        { type: 'Revision de contrato', clientName: 'Laura Gomez Martinez', date: '2024-02-01' },
+        { type: 'Enviar documentacion', clientName: 'Maria Garcia Lopez', date: '2024-02-05' },
+      ],
     },
-    // Referidos
     referrals: {
-      total: referrals?.length || 0,
-      pendingPayments: pendingReferralPayments.length,
-      totalRewardsPaid: totalReferralRewards,
+      total: 2,
+      pendingPayments: 1,
+      totalRewardsPaid: 20,
       byStatus: {
-        pending: referrals?.filter(r => r.status === 'pending').length || 0,
-        contacted: referrals?.filter(r => r.status === 'contacted').length || 0,
-        signed: referrals?.filter(r => r.status === 'signed').length || 0,
-        rejected: referrals?.filter(r => r.status === 'rejected').length || 0,
+        pending: 1,
+        contacted: 0,
+        signed: 1,
+        rejected: 0,
       },
     },
   };
@@ -192,13 +100,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Obtener contexto del CRM
-    const crmContext = await getCRMContext();
+    // Obtener contexto del CRM (datos mock para demo)
+    const crmContext = getCRMContext();
 
     // Construir el system prompt con el contexto
-    const systemPrompt = `Eres CalidAI, el asistente inteligente de Calidad Energia, una empresa de comercializacion de energia en España.
+    const systemPrompt = `Eres CalidAI, el asistente inteligente de EnergyVoice AI Demo, una plataforma de demostracion para empresas de comercializacion de energia en España.
 
 Tu rol es ayudar a los usuarios del CRM respondiendo preguntas sobre leads, clientes, estudios de energia, recordatorios y referidos.
+
+NOTA: Estos son datos de demostracion, no datos reales.
 
 DATOS ACTUALES DEL CRM (fecha: ${new Date().toLocaleDateString('es-ES')}):
 
@@ -227,7 +137,7 @@ ${crmContext.leads.recent.map(l => `- ${l.name} (${l.phone}) - Estado: ${l.statu
 - Cancelados: ${crmContext.clients.byStatus.cancelled}
 
 CONTRATOS POR VENCER:
-${crmContext.clients.expiringContracts.map(c => `- ${c.name} (${c.phone}) - Vence: ${c.contractEnd} - Comercializadora: ${c.provider || 'N/A'}`).join('\n') || 'Ninguno en los proximos 30 dias'}
+${crmContext.clients.expiringContracts.length > 0 ? crmContext.clients.expiringContracts.map((c: { name: string; phone: string; provider?: string; contractEnd: string }) => `- ${c.name} (${c.phone}) - Vence: ${c.contractEnd} - Comercializadora: ${c.provider || 'N/A'}`).join('\n') : 'Ninguno en los proximos 30 dias'}
 
 CLIENTES RECIENTES:
 ${crmContext.clients.recent.map(c => `- ${c.name} - Estado: ${c.status} - Comercializadora: ${c.provider || 'N/A'}`).join('\n')}
@@ -253,11 +163,12 @@ ${crmContext.reminders.pending.map(r => `- ${r.date}: ${r.type} - ${r.clientName
 INSTRUCCIONES:
 1. Responde siempre en español de España
 2. Se conciso pero completo
-3. Usa los datos reales del CRM para responder
+3. Usa los datos del CRM para responder
 4. Si te preguntan por algo que no esta en los datos, indica que no tienes esa informacion
 5. Puedes dar recomendaciones basadas en los datos
 6. Usa emojis moderadamente para hacer las respuestas mas visuales
-7. Si detectas oportunidades de negocio o alertas, mencionalas proactivamente`;
+7. Si detectas oportunidades de negocio o alertas, mencionalas proactivamente
+8. Recuerda mencionar que es una demo si es relevante`;
 
     // Construir mensajes para OpenAI
     const messages = [
